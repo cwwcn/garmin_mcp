@@ -262,20 +262,47 @@ def init_api(email, password):
             sys.stderr = old_stderr
             sys.stdout = old_stdout
 
-    except (FileNotFoundError, GarminConnectConnectionError, GarminConnectTooManyRequestsError, GarminConnectAuthenticationError):
-        # Session is expired. You'll need to log in again
+    except (
+        FileNotFoundError,
+        GarminConnectConnectionError,
+        GarminConnectTooManyRequestsError,
+        GarminConnectAuthenticationError,
+    ) as token_error:
+        # Token-based login failed. Interactive runs may fall back to credentials;
+        # non-interactive servers need a precise diagnostic and must stop here.
 
         # Check if we're in a non-interactive environment without credentials
         if not is_interactive_terminal() and (not email or not password):
-            print(
-                "ERROR: OAuth tokens not found and no interactive terminal available.\n"
-                "Please authenticate first:\n"
-                "  1. Run: garmin-mcp-auth\n"
-                "  2. Enter your credentials and MFA code\n"
-                "  3. Restart your MCP client\n"
-                f"Tokens will be saved to: {tokenstore}\n",
-                file=sys.stderr,
-            )
+            if isinstance(token_error, FileNotFoundError):
+                print(
+                    "ERROR: OAuth tokens not found and no interactive terminal available.\n"
+                    "Please authenticate first:\n"
+                    "  1. Run: garmin-mcp-auth\n"
+                    "  2. Enter your credentials and MFA code\n"
+                    "  3. Restart your MCP client\n"
+                    f"Tokens will be saved to: {tokenstore}\n",
+                    file=sys.stderr,
+                )
+            elif isinstance(token_error, GarminConnectTooManyRequestsError):
+                print(
+                    "ERROR: Garmin rate-limited OAuth token validation.\n"
+                    "Wait a few minutes, then restart the MCP server.\n",
+                    file=sys.stderr,
+                )
+            elif isinstance(token_error, GarminConnectAuthenticationError):
+                print(
+                    "ERROR: Existing Garmin OAuth tokens are invalid or expired.\n"
+                    "Run 'garmin-mcp-auth --force-reauth' interactively, then restart the server.\n",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "ERROR: Garmin Connect was unreachable while validating OAuth tokens.\n"
+                    "The token file was found, but the network request failed. "
+                    "Check DNS, proxy settings, routing, and Garmin service availability.\n"
+                    f"Details: {token_error}\n",
+                    file=sys.stderr,
+                )
             return None
 
         print(
