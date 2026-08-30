@@ -205,14 +205,11 @@ wheels = [
 
 [[package]]
 name = "click"
-version = "8.1.8"
+version = "8.5.0"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593, upload-time = "2024-12-21T18:38:44.339Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/0e/7fa0ef50764b67090eca4114772a2abf8b6148198475e54c660b97caeee6/click-8.5.0.tar.gz", hash = "sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34", size = 382235, upload-time = "2026-08-26T13:33:14.56Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/d4/7ebdbd03970677812aac39c869717059dbb71a4cfc033ca6e5221787892c/click-8.1.8-py3-none-any.whl", hash = "sha256:63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2", size = 98188, upload-time = "2024-12-21T18:38:41.666Z" },
+    { url = "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl", hash = "sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360", size = 125251, upload-time = "2026-08-26T13:33:12.928Z" },
 ]
 
 [[package]]
@@ -319,7 +316,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -337,9 +334,10 @@ name = "garmin-mcp"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "click" },
     { name = "fitparse" },
     { name = "garminconnect", version = "0.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "garminconnect", version = "0.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "garminconnect", version = "0.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "mcp" },
     { name = "python-dotenv" },
     { name = "requests" },
@@ -355,9 +353,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.3.3,<9" },
     { name = "fitparse", specifier = ">=1.2.0" },
     { name = "garminconnect", marker = "python_full_version < '3.12'", specifier = "==0.3.2" },
-    { name = "garminconnect", marker = "python_full_version >= '3.12'", specifier = "==0.3.4" },
+    { name = "garminconnect", marker = "python_full_version >= '3.12'", specifier = "==0.3.5" },
     { name = "mcp", specifier = ">=1.28.1,<2" },
     { name = "python-dotenv", specifier = "==1.2.2" },
     { name = "requests", specifier = "==2.33.0" },
@@ -379,9 +378,9 @@ resolution-markers = [
     "python_full_version < '3.12'",
 ]
 dependencies = [
-    { name = "curl-cffi", marker = "python_full_version < '3.12'" },
-    { name = "requests", marker = "python_full_version < '3.12'" },
-    { name = "ua-generator", marker = "python_full_version < '3.12'" },
+    { name = "curl-cffi" },
+    { name = "requests" },
+    { name = "ua-generator" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d2/bf/ec89102470c240fd1b0877f18f3b5039466da3e6af8f81dc537147b567ab/garminconnect-0.3.2.tar.gz", hash = "sha256:ca9d813139cb5f81cd6fc90236a225608e7e13acd7b1034170b0facfdd072d9a", size = 51111, upload-time = "2026-04-11T09:22:05.987Z" }
 wheels = [
@@ -390,7 +389,7 @@ wheels = [
 
 [[package]]
 name = "garminconnect"
-version = "0.3.4"
+version = "0.3.5"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -399,13 +398,13 @@ resolution-markers = [
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "curl-cffi", marker = "python_full_version >= '3.12'" },
-    { name = "requests", marker = "python_full_version >= '3.12'" },
-    { name = "ua-generator", marker = "python_full_version >= '3.12'" },
+    { name = "curl-cffi" },
+    { name = "requests" },
+    { name = "ua-generator" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/64/17/0542bf3e860a81a9a4d530da1a4c455c021c7437760cc42df9e263ed81a4/garminconnect-0.3.4.tar.gz", hash = "sha256:1999b3ca945c9cfc44616403405f6c4a094492de151eb8032b5df19909de839a", size = 57694, upload-time = "2026-06-02T13:59:58.756Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/64/d8/df118bbbf9a4634bf335cba7baf66f0618babbbf6982c7c43560f9d96d32/garminconnect-0.3.5.tar.gz", hash = "sha256:b4de13fa5e6c581348cbd8110afb9095dc68273d6cfb1284ed13cae7df0f6b02", size = 61692, upload-time = "2026-06-04T11:09:16.641Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/eb/6e/cb3809a74485a0ea7d9ba132ee6811d07f0800970e217de41120d36a8d9a/garminconnect-0.3.4-py3-none-any.whl", hash = "sha256:1f360434c220e42f292fb79d4719f457d9e182ac32f4488b23845abb24fccbac", size = 53715, upload-time = "2026-06-02T13:59:57.344Z" },
+    { url = "https://files.pythonhosted.org/packages/19/bb/c35ed445156311b9408aa2a10b6c9199392ea1fa26144de947d544c5601a/garminconnect-0.3.5-py3-none-any.whl", hash = "sha256:7a34c408ab4b94a69f67baeda96e8c8aef674447389bbb39beea0e5e49c2a29d", size = 57331, upload-time = "2026-06-04T11:09:15.203Z" },
 ]
 
 [[package]]
