@@ -578,6 +578,7 @@ def register_tools(app):
             return "end_date must be on or after start_date."
 
         nights = []
+        errors = []
         current = start
         while current <= end:
             date_str = current.isoformat()
@@ -588,20 +589,34 @@ def register_tools(app):
                     entry.update(_extract_sleep_summary(sleep_data))
                     if len(entry) > 1:  # has more than just date
                         nights.append(entry)
-            except Exception:
-                pass  # skip nights with no data / transient errors
+            except Exception as exc:
+                # Do not silently turn authentication/server failures into
+                # missing sleep. Keep processing other nights, but report the
+                # failed dates so callers can distinguish incomplete data.
+                errors.append({"date": date_str, "error": str(exc)})
             current += datetime.timedelta(days=1)
 
+        if not nights and errors:
+            return json.dumps({
+                "start_date": start_date,
+                "end_date": end_date,
+                "nights_requested": days,
+                "nights_returned": 0,
+                "errors": errors,
+            }, indent=2)
         if not nights:
             return f"No sleep data found between {start_date} and {end_date}."
 
-        return json.dumps({
+        result = {
             "start_date": start_date,
             "end_date": end_date,
             "nights_requested": days,
             "nights_returned": len(nights),
             "nights": nights,
-        }, indent=2)
+        }
+        if errors:
+            result["errors"] = errors
+        return json.dumps(result, indent=2)
 
     @app.tool()
     async def get_stress_data(date: str) -> str:

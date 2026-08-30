@@ -22,6 +22,7 @@ Garmin's API is accessed via the awesome [python-garminconnect](https://github.c
 - Weekly health aggregates (steps, stress, intensity minutes)
 - Advanced cycling analytics: power zones, FIT file analysis, DI2 electronic shift intelligence
 - Training load trend (CTL/ATL/TSB), HRV trend, VO2 max trend, respiration rate trend
+- Running Tolerance daily and trend metrics (impact load, tolerance, equivalent distance)
 - Power Duration Curve, climb detection with VAM, cardiac drift (aerobic decoupling), W/kg calculations
 
 ### Tool Coverage
@@ -46,6 +47,25 @@ This MCP server implements **110+ tools** covering ~90% of the [python-garmincon
 - ✅ Activity File Downloads (2 tools) - download activity files in FIT, GPX, TCX, or CSV format
 
 > **Note:** Activity Analysis tools require a compatible power meter (e.g., Garmin Rally, Favero Assioma, PowerTap P1) and/or Shimano Di2 / SRAM eTap electronic shifting. The `fitparse` dependency is installed automatically.
+
+### Running Tolerance
+
+**`get_running_tolerance(date)`** returns Garmin's running-specific tolerance,
+acute impact load, actual distance, and a local `impact_multiplier` derived from
+impact load divided by actual distance. The multiplier is not Garmin's separate
+Training Load Ratio.
+
+**`get_running_tolerance_trend(start_date, end_date, aggregation="weekly")`**
+returns daily or weekly tolerance history. Daily ranges are limited to 90 days;
+weekly ranges to 366 days to protect response size.
+
+### Sleep Range
+
+**`get_sleep_summary_range(start_date, end_date)`** returns compact sleep
+summaries for each night in a range (maximum 90 nights). Garmin has no native
+sleep range endpoint, so this performs one request per night. Missing nights are
+omitted; request failures are reported separately in an `errors` array instead of
+being silently presented as no data.
 
 ### Calendar Events
 

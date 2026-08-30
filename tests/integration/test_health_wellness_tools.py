@@ -392,7 +392,7 @@ async def test_get_sleep_summary_range_tool(app_with_health_wellness, mock_garmi
 async def test_get_sleep_summary_range_skips_nights_without_data(
     app_with_health_wellness, mock_garmin_client
 ):
-    """Nights with no Garmin data (or a per-night error) are skipped, not fatal"""
+    """Nights with no Garmin data are omitted and per-night errors are reported."""
 
     def side_effect(date):
         if date == "2024-01-14":
@@ -412,6 +412,7 @@ async def test_get_sleep_summary_range_skips_nights_without_data(
     assert data["nights_requested"] == 3
     assert data["nights_returned"] == 1
     assert data["nights"][0]["date"] == "2024-01-13"
+    assert data["errors"] == [{"date": "2024-01-15", "error": "transient API error"}]
 
 
 @pytest.mark.asyncio

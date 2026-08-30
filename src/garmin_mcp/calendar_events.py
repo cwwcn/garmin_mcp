@@ -2,6 +2,7 @@
 Calendar event (race) functions for Garmin Connect MCP Server
 """
 import json
+import math
 import re
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -62,7 +63,25 @@ def _target_distance_meters(item: Dict[str, Any]) -> Optional[float]:
     if target.get("unitType") != "distance":
         return None
     value = target.get("value")
-    return value if isinstance(value, (int, float)) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        return None
+    unit = str(target.get("unit") or "meter").lower()
+    multipliers = {
+        "meter": 1.0,
+        "meters": 1.0,
+        "metre": 1.0,
+        "metres": 1.0,
+        "kilometer": 1000.0,
+        "kilometers": 1000.0,
+        "kilometre": 1000.0,
+        "kilometres": 1000.0,
+        "km": 1000.0,
+        "mile": 1609.344,
+        "miles": 1609.344,
+        "mi": 1609.344,
+    }
+    multiplier = multipliers.get(unit)
+    return value * multiplier if multiplier is not None else None
 
 
 def _clean_str(value: Any) -> Optional[str]:

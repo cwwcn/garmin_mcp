@@ -848,7 +848,7 @@ async def test_get_training_status_includes_cycling_vo2_max(app_with_training, m
 
 @pytest.mark.asyncio
 async def test_get_running_tolerance_tool(app_with_training, mock_garmin_client):
-    """Test get_running_tolerance tool converts meters to km and computes load_ratio"""
+    """Test get_running_tolerance converts meters to km and computes its derived multiplier."""
     mock_garmin_client.get_running_tolerance.return_value = MOCK_RUNNING_TOLERANCE_DAILY
 
     result = await app_with_training.call_tool(
@@ -866,7 +866,7 @@ async def test_get_running_tolerance_tool(app_with_training, mock_garmin_client)
     assert data["tolerance_km"] == 34.0
     assert data["acute_load_km"] == 25.0
     assert data["distance_km"] == 22.0
-    assert data["load_ratio"] == round(25000 / 22000, 2)
+    assert data["impact_multiplier"] == round(25000 / 22000, 2)
     assert data["feedback_phrase"] == "MEDIUM_LOAD"
 
 
@@ -1003,6 +1003,36 @@ async def test_get_running_tolerance_trend_daily_range_too_large(app_with_traini
     assert result is not None
     assert "Date range too large" in result[0][0].text
     mock_garmin_client.get_running_tolerance.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_running_tolerance_trend_rejects_invalid_aggregation(app_with_training, mock_garmin_client):
+    with pytest.raises(Exception, match="Input should be 'daily' or 'weekly'"):
+        await app_with_training.call_tool(
+            "get_running_tolerance_trend",
+            {"start_date": "2024-01-01", "end_date": "2024-01-07", "aggregation": "monthly"},
+        )
+    mock_garmin_client.get_running_tolerance.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_running_tolerance_skips_malformed_rows(app_with_training, mock_garmin_client):
+    mock_garmin_client.get_running_tolerance.return_value = [None, "bad", {
+        "calendarDate": "2024-01-15",
+        "acuteTolerance": None,
+        "acuteImpactLoad": "bad",
+        "acuteDistance": 0,
+    }]
+
+    result = await app_with_training.call_tool(
+        "get_running_tolerance",
+        {"date": "2024-01-15"},
+    )
+
+    data = json.loads(result[0][0].text)
+    assert data["date"] == "2024-01-15"
+    assert data["distance_km"] == 0.0
+    assert "impact_multiplier" not in data
 
 
 @pytest.mark.asyncio

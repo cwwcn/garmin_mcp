@@ -26,6 +26,22 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _finite_number(value: Any) -> Optional[float]:
+    """Return finite numeric Garmin values, ignoring null/malformed values."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def _running_tolerance_entries(value: Any) -> List[Dict[str, Any]]:
+    """Normalize the running-tolerance response and discard malformed rows."""
+    if isinstance(value, dict):
+        value = value.get("data", value.get("items", []))
+    if not isinstance(value, list):
+        return []
+    return [entry for entry in value if isinstance(entry, dict)]
+
+
 def _extract_vo2_measurements(data: Any) -> Dict[str, float]:
     """Find all VO2 max values by sport in known Garmin response shapes."""
     if isinstance(data, list):
@@ -1307,9 +1323,10 @@ def register_tools(app):
         Returns Garmin's running load capacity model: how much running load the
         athlete can currently absorb (tolerance), the intensity-adjusted load
         their recent runs have produced (acute load), and the raw distance behind
-        that load. All three are expressed in km so they're directly comparable —
-        `load_ratio` (acute_load_km / distance_km) quantifies how much intensity
-        is inflating the cost of each kilometer run.
+        that load. Values are converted from Garmin's meter-equivalent payload to
+        kilometers. `impact_multiplier` is a local derived metric (acute impact
+        load divided by actual distance), not Garmin's separate Training Load
+        Ratio.
 
         Args:
             date: Date in YYYY-MM-DD format
@@ -1319,13 +1336,17 @@ def register_tools(app):
         except Exception as e:
             return f"Error retrieving running tolerance data: {str(e)}"
 
-        if not data:
+        entries = _running_tolerance_entries(data)
+        if not entries:
             return "Your device does not support this metric."
 
-        entry = data[0]
-        tolerance = entry.get("acuteTolerance")
-        acute_load = entry.get("acuteImpactLoad")
-        distance = entry.get("acuteDistance")
+        entry = next(
+            (candidate for candidate in entries if candidate.get("calendarDate") == date),
+            entries[0],
+        )
+        tolerance = _finite_number(entry.get("acuteTolerance"))
+        acute_load = _finite_number(entry.get("acuteImpactLoad"))
+        distance = _finite_number(entry.get("acuteDistance"))
 
         curated: Dict[str, Any] = {"date": entry.get("calendarDate", date)}
         if tolerance is not None:
@@ -1334,8 +1355,8 @@ def register_tools(app):
             curated["acute_load_km"] = round(acute_load / 1000, 2)
         if distance is not None:
             curated["distance_km"] = round(distance / 1000, 2)
-        if acute_load is not None and distance:
-            curated["load_ratio"] = round(acute_load / distance, 2)
+        if acute_load is not None and distance is not None and distance > 0:
+            curated["impact_multiplier"] = round(acute_load / distance, 2)
         feedback = entry.get("runningToleranceFeedBackPhrase")
         if feedback:
             curated["feedback_phrase"] = feedback
@@ -1352,11 +1373,11 @@ def register_tools(app):
 
         Running Tolerance moves slowly — its value is in the trajectory, not any
         single day. Returns, per period: tolerance_km (current load capacity),
-        acute_load_km (intensity-adjusted load), distance_km (actual distance
-        run), and load_ratio (acute_load_km / distance_km — how much intensity
-        inflates the cost of each kilometer). Weekly aggregation (default) gives
-        a compact multi-month view; daily gives day-to-day resolution for a
-        shorter window.
+        impact_load_km (intensity-adjusted load), distance_km (actual distance
+        run), and impact_multiplier (impact_load_km / distance_km). The multiplier
+        is a local derived metric and must not be confused with Garmin's separate
+        Training Load Ratio. Weekly aggregation (default) gives a compact
+        multi-month view; daily gives day-to-day resolution for a shorter window.
 
         Recommended range: 4-12 weeks. Maximum: 90 days for daily aggregation,
         366 days for weekly (this endpoint returns the whole range in one call,
@@ -1367,6 +1388,9 @@ def register_tools(app):
             end_date: End date in YYYY-MM-DD format
             aggregation: "daily" or "weekly" (default "weekly")
         """
+        if aggregation not in ("daily", "weekly"):
+            return "Invalid aggregation. Use 'daily' or 'weekly'."
+
         try:
             start = datetime.date.fromisoformat(start_date)
             end = datetime.date.fromisoformat(end_date)
@@ -1391,19 +1415,20 @@ def register_tools(app):
         except Exception as e:
             return f"Error retrieving running tolerance trend: {str(e)}"
 
-        if not data:
+        entries = _running_tolerance_entries(data)
+        if not entries:
             return "Your device does not support this metric."
 
         trend = []
-        for entry in data:
+        for entry in entries:
             if aggregation == "daily":
-                tolerance = entry.get("acuteTolerance")
-                acute_load = entry.get("acuteImpactLoad")
-                distance = entry.get("acuteDistance")
+                tolerance = _finite_number(entry.get("acuteTolerance"))
+                acute_load = _finite_number(entry.get("acuteImpactLoad"))
+                distance = _finite_number(entry.get("acuteDistance"))
             else:
-                tolerance = entry.get("tolerance")
-                acute_load = entry.get("totalImpactLoad")
-                distance = entry.get("totalDistance")
+                tolerance = _finite_number(entry.get("tolerance"))
+                acute_load = _finite_number(entry.get("totalImpactLoad"))
+                distance = _finite_number(entry.get("totalDistance"))
 
             point: Dict[str, Any] = {"date": entry.get("calendarDate")}
             if tolerance is not None:
@@ -1412,8 +1437,8 @@ def register_tools(app):
                 point["acute_load_km"] = round(acute_load / 1000, 2)
             if distance is not None:
                 point["distance_km"] = round(distance / 1000, 2)
-            if acute_load is not None and distance:
-                point["load_ratio"] = round(acute_load / distance, 2)
+            if acute_load is not None and distance is not None and distance > 0:
+                point["impact_multiplier"] = round(acute_load / distance, 2)
 
             if aggregation == "daily":
                 feedback = entry.get("runningToleranceFeedBackPhrase")
