@@ -42,6 +42,16 @@ _COURSE_DOWNLOAD_DIR_ENV = "GARMIN_COURSE_DOWNLOAD_DIR"
 ET.register_namespace("", _GPX_NAMESPACE)
 
 
+def _json_dumps(value: Any) -> str:
+    """Serialize course tool results with user-authored Unicode preserved.
+
+    Course names are opaque labels.  Keeping Chinese characters and symbols
+    such as ``®`` visible in MCP content avoids making the client/model decode
+    ``\\uXXXX`` escapes before it can copy a name literally.
+    """
+    return json.dumps(value, indent=2, ensure_ascii=False)
+
+
 def _validate_course_id(course_id: int) -> int:
     """Return a positive integer course id or raise a user-facing error."""
     if isinstance(course_id, bool):
@@ -429,13 +439,15 @@ def register_tools(app):
         """List all courses saved on Garmin Connect.
 
         Returns a curated list of courses with id, name, distance, activity type
-        and creation date.
+        and creation date.  ``name`` is the exact user-authored Garmin label:
+        treat it as opaque data and copy it verbatim.  Do not correct,
+        translate, transliterate, add/remove spaces, or infer a replacement.
         """
         try:
             data = garmin_client.client.connectapi("/course-service/course")
 
             if not isinstance(data, list):
-                return json.dumps(data, indent=2)
+                return _json_dumps(data)
 
             curated = []
             for course in data:
@@ -461,7 +473,7 @@ def register_tools(app):
                         "created": course.get("createdDateFormatted"),
                     }
                 )
-            return json.dumps({"count": len(curated), "courses": curated}, indent=2)
+            return _json_dumps({"count": len(curated), "courses": curated})
         except Exception as e:
             return f"Error listing courses: {str(e)}"
 
@@ -471,7 +483,9 @@ def register_tools(app):
 
         This is a read-only operation.  ``course_id`` should come from
         ``get_courses``.  Route geometry is summarized by point count; use
-        ``download_course_gpx`` when the actual track file is needed.
+        ``download_course_gpx`` when the actual track file is needed.  The
+        returned ``name`` is an exact opaque Garmin label and must be copied
+        verbatim without correction, translation, or reformatting.
         """
         try:
             course_id = _validate_course_id(course_id)
@@ -505,7 +519,7 @@ def register_tools(app):
             url = _course_url(course_id)
             if url:
                 result["url"] = url
-            return json.dumps(result, indent=2)
+            return _json_dumps(result)
         except Exception as e:
             return f"Error fetching course details: {str(e)}"
 
@@ -521,14 +535,15 @@ def register_tools(app):
         directly to Telegram.  ``output_path`` may be a .gpx file or a
         directory.  When omitted, ``GARMIN_COURSE_DOWNLOAD_DIR`` is preferred,
         followed by ``GARMIN_FIT_DOWNLOAD_DIR``.  Existing files are protected
-        unless ``overwrite=True`` is explicitly requested.
+        unless ``overwrite=True`` is explicitly requested.  The returned
+        ``name`` is the exact opaque Garmin label; preserve it verbatim.
         """
         temporary_path: Optional[str] = None
         try:
             course_id = _validate_course_id(course_id)
             target_path = _resolve_gpx_output_path(course_id, output_path)
             if target_path is None:
-                return json.dumps(
+                return _json_dumps(
                     {
                         "status": "needs_setup",
                         "course_id": course_id,
@@ -537,21 +552,19 @@ def register_tools(app):
                             "(GARMIN_FIT_DOWNLOAD_DIR is also supported)."
                         ),
                     },
-                    indent=2,
                 )
 
             target = pathlib.Path(target_path)
             if target.exists() and target.is_symlink():
                 return f"Error downloading course GPX: refusing to write through symbolic link: {target}"
             if target.exists() and not overwrite:
-                return json.dumps(
+                return _json_dumps(
                     {
                         "status": "exists",
                         "course_id": course_id,
                         "gpx_path": str(target),
                         "message": "File already exists; set overwrite=true only after confirming.",
                     },
-                    indent=2,
                 )
 
             data = garmin_client.client.connectapi(f"/course-service/course/{course_id}")
@@ -570,7 +583,7 @@ def register_tools(app):
             url = _course_url(course_id)
             if url:
                 result["url"] = url
-            return json.dumps(result, indent=2)
+            return _json_dumps(result)
         except (ValueError, FileExistsError) as e:
             return f"Error downloading course GPX: {str(e)}"
         except Exception as e:
@@ -645,7 +658,7 @@ def register_tools(app):
             saved = garmin_client.client.post(
                 "connectapi", "/course-service/course", json=payload, api=True,
             )
-            return json.dumps(
+            return _json_dumps(
                 {
                     "status": "success",
                     "course_id": saved.get("courseId"),
@@ -656,7 +669,6 @@ def register_tools(app):
                     "activity_type_id": saved.get("activityTypePk"),
                     "url": f"https://connect.{garmin_client.client.domain}/modern/course/{saved.get('courseId')}",
                 },
-                indent=2,
             )
 
         except Exception as e:
@@ -673,13 +685,12 @@ def register_tools(app):
             garmin_client.client.delete(
                 "connectapi", f"/course-service/course/{course_id}"
             )
-            return json.dumps(
+            return _json_dumps(
                 {
                     "status": "success",
                     "course_id": course_id,
                     "message": f"Course {course_id} deleted",
                 },
-                indent=2,
             )
         except Exception as e:
             return f"Error deleting course: {str(e)}"

@@ -59,6 +59,34 @@ async def test_get_courses_curates_fields(app_with_courses, mock_garmin_client):
 
 
 @pytest.mark.asyncio
+async def test_get_courses_preserves_real_chinese_course_names_verbatim(
+    app_with_courses, mock_garmin_client
+):
+    """Garmin course labels are opaque user data, not text to normalize."""
+    names = [
+        "大境门越野赛 by UTMB®CGW70K",
+        "万龙50",
+        "嵩山少太连穿",
+    ]
+    mock_garmin_client.client.connectapi.return_value = [
+        {"courseId": index, "courseName": name}
+        for index, name in enumerate(names, start=1)
+    ]
+
+    result = await app_with_courses.call_tool("get_courses", {})
+    payload = _result_text(result)
+    data = json.loads(payload)
+
+    assert [course["name"] for course in data["courses"]] == names
+    # The MCP text itself must contain the labels, rather than JSON \uXXXX
+    # escapes that force a downstream client/model to decode them first.
+    for name in names:
+        assert name in payload
+    assert "\\u5927" not in payload
+    assert "\\u4e07" not in payload
+
+
+@pytest.mark.asyncio
 async def test_get_courses_empty(app_with_courses, mock_garmin_client):
     """An empty course list returns count 0 and an empty list."""
     mock_garmin_client.client.connectapi.return_value = []
