@@ -41,7 +41,7 @@ This MCP server implements **110+ tools** covering ~90% of the [python-garmincon
 - ✅ Women's Health (3 tools)
 - ✅ User Profile (3 tools)
 - ✅ High-Level Workout Builders (4 tools) - create and schedule workouts without writing JSON
-- ✅ Courses (3 tools) - list / upload GPX as course / delete course
+- ✅ Courses (5 tools) - list / details / upload GPX / export GPX / delete course
 - ✅ Calendar Events (1 tool) - list races and events registered on the Garmin Connect calendar
 - ✅ Activity Analysis (2 tools) - FIT file parsing, Power Duration Curve; requires power meter and/or Di2
 - ✅ Activity File Downloads (2 tools) - download activity files in FIT, GPX, TCX, or CSV format
@@ -72,6 +72,18 @@ being silently presented as no data.
 **`get_calendar_events(start_date, end_date)`** lists the races and events you added or subscribed to in Garmin Connect.
 
 These entries live in Garmin's calendar feed as `itemType: "event"`, separate from workouts. `get_scheduled_workouts` queries the workout schedule and never returns them, so this is the tool to reach for when asked which races are coming up. Each event reports its target distance, the local start time when the organiser published one, and two flags: `is_race`, and `primary_event` for the goal race an active training plan targets.
+
+### Courses and GPX Navigation
+
+Course tools support a safer trail-running and GPX workflow:
+
+- **`get_courses()`** — lists saved Garmin courses.
+- **`get_course_details(course_id)`** — returns course metadata, route-point counts, and valid navigation waypoints such as water, aid, summit, camp, or hazard markers. Malformed waypoint entries are counted rather than crashing the tool.
+- **`upload_course(gpx_path, course_name=None, activity_type="running", description=None)`** — uploads a GPX file as a private Garmin course. The file must be accessible inside the MCP container (for NAS use, place it in a mounted directory).
+- **`download_course_gpx(course_id, output_path=None, overwrite=False)`** — exports a saved course as a standards-compliant GPX 1.1 file, including track points, elevation, timestamps when available, and valid course waypoints.
+- **`delete_course(course_id)`** — deletes a course; treat as a destructive operation and confirm the exact course first.
+
+For GPX export, provide an explicit `.gpx` file path or directory. If omitted, the server uses `GARMIN_COURSE_DOWNLOAD_DIR`, then `GARMIN_FIT_DOWNLOAD_DIR`; if neither is configured it returns `status: "needs_setup"` instead of silently writing into the application directory. Existing files are not overwritten unless `overwrite=true` is explicitly supplied. The export validates coordinates and writes atomically, but it does not validate whether a route is safe or suitable for your fitness level.
 
 ### Activity File Downloads
 
@@ -453,6 +465,7 @@ Your Garmin Connect credentials are read from environment variables:
 - `GARMIN_PASSWORD_FILE`: Path to a file containing your Garmin Connect password
 - `GARMIN_IS_CN`: Set to `true` to use Garmin Connect China (garmin.cn) instead of the international version (default: `false`)
 - `GARMIN_FIT_DOWNLOAD_DIR`: Default directory for downloaded activity files. When set, skips the first-run setup prompt in `download_activity_file`.
+- `GARMIN_COURSE_DOWNLOAD_DIR`: Default directory for GPX files exported by `download_course_gpx` (falls back to `GARMIN_FIT_DOWNLOAD_DIR`).
 - `GARMIN_FIT_CONFIG`: Path to the persisted download-directory config file (default: `~/.garminconnect_fit_config.json`).
 
 File-based secrets are useful in certain environments, such as inside a Docker container. Note that you cannot set both `GARMIN_EMAIL` and `GARMIN_EMAIL_FILE`, similarly you cannot set both `GARMIN_PASSWORD` and `GARMIN_PASSWORD_FILE`.
