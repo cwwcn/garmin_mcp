@@ -6,6 +6,46 @@
 
 Garmin API 通过优秀的 [python-garminconnect](https://github.com/cyberjunky/python-garminconnect) 库访问。
 
+## 本 Fork 的新增与改进
+
+本仓库基于上游 Garmin MCP，并持续吸收上游更新。下文区分两类内容：**[Fork 新增/增强]** 表示当前 fork 相对上游仍保留的额外实现；**[已同步到上游]** 表示最初由本 fork 完成、如今上游也已有的功能或修复。
+
+### 当前 Fork 相对上游的扩展
+
+| 标记 | 功能 | 说明 |
+|---|---|---|
+| **[Fork 新增]** | Garmin Connect 中国区认证兼容 | 补齐中国区移动 SSO 服务地址，并在 token 序列化中保留 JWT_WEB、CSRF 与 Cookie 回退状态，改善中国区登录/MFA 流程。中国区认证要求 Python 3.12 或更高版本。 |
+| **[Fork 增强]** | 日历赛事数据校验 | `get_calendar_events` 工具本身已同步到上游；本 fork 额外过滤负数、非有限值和错误类型的距离数据，避免污染结果。 |
+| **[Fork 增强]** | 跑步耐受度结果可靠性 | `get_running_tolerance` 与趋势工具本身已同步到上游；本 fork 增强了响应结构和数值校验、日趋势排序，并将自定义指标命名为 `impact_multiplier`，明确它不是 Garmin 的 Training Load Ratio。 |
+| **[Fork 增强]** | 路线与 GPX 安全处理 | 在上游路线工具基础上强化 GPX 校验和导出：保留中文及其他 Unicode 路线名称，不擅自改写；校验经纬度和路线点；采用原子写入，并防止意外覆盖或经符号链接写入。 |
+| **[Fork 增强]** | 依赖与安全检查 | 按 Python 版本选择 Garmin Connect 依赖，并在 CI 安全工作流中运行 `pip-audit` 检查依赖漏洞。 |
+
+### 最初由本 Fork 实现、现已同步到上游
+
+以下能力最初在本 fork 中开发或修复，当前上游主线也已包含：
+
+- **日历赛事读取：** `get_calendar_events` 可读取 Garmin Connect 中指定日期范围的比赛和日历活动。
+- **跑步耐受度工具：** `get_running_tolerance` 与 `get_running_tolerance_trend` 提供单日及按日/按周的耐受度趋势。
+- **多晚睡眠汇总：** `get_sleep_summary_range` 可在一次调用中汇总指定日期区间的睡眠数据。
+- **健康数据空值容错：** 改善 HRV、睡眠、训练进度、身体电量和训练准备度等接口对缺失或空字段的处理，减少 Garmin 返回不完整数据时的报错。
+- **训练与认证错误处理：** 规范训练状态响应、跳过空设备映射，并更清楚地区分 token 目录或文件缺失、不可读以及 token 被拒绝等启动问题。
+- **路线删除确认：** `delete_course` 先返回路线预览，只有再次明确传入 `confirm=true` 才执行删除。
+
+### 可选的 Hermes Telegram Skills
+
+这些是独立于 Garmin MCP 服务端的 Hermes 工作流 Skill，通过 Telegram `/` 命令使用；它们**不是 Garmin MCP 内置命令，也不会随 MCP 工具列表自动安装**。安装并重新加载 Hermes Skills 后可使用：
+
+| Telegram 命令 | 用途 | 写入行为 |
+|---|---|---|
+| `/garmin_daily` | 综合 Garmin 恢复指标与主观状态，给出当天训练、降级或休息建议。 | 只读 |
+| `/garmin_weekly` | 对比最近完整训练周与前一周，给出下周训练结构建议。 | 只读 |
+| `/garmin_review` | 复盘最近一次或指定日期的单次训练，评估目标完成度、执行质量与恢复代价。 | 只读 |
+| `/health_checkin` | 记录疲劳、酸痛、压力、睡眠、疼痛、生病、饮酒和 RPE 等主观信息，供其他 Skill 参考。 | 追加到 Hermes 的本地 JSONL 记录；不写入 Garmin |
+| `/garmin_plan` | 根据目标、可训练时间、训练历史和恢复状态生成七天训练计划草案。 | 草案阶段只读；仅在用户看过完整草案并明确确认后，才创建和排程 Garmin Workout |
+| `/garmin_progress` | 对最近六周训练阶段进行评估，判断投入、表现和恢复变化。 | 只读 |
+
+> **范围说明：** Hermes Skills 是可选的个人工作流层；Garmin MCP 负责提供数据和工具，Telegram 命令由 Hermes 侧的 Skill 菜单与配置提供。本文介绍其用途，不代表它们已包含在 Garmin MCP 安装包中。
+
 ## 功能
 
 - 分页列出近期活动
