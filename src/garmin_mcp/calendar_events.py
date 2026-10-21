@@ -17,6 +17,16 @@ garmin_client = None
 # and badges share the same feed and are ignored here.
 EVENT_ITEM_TYPE = "event"
 
+# Garmin's calendar-service sends completionTarget.unit as one of these
+# strings (Connect's custom-event picker: meter, kilometer, yard, mile).
+# Always report meters; unknown units become None.
+_DISTANCE_UNIT_TO_METERS = {
+    "meter": 1.0,
+    "kilometer": 1000.0,
+    "yard": 0.9144,
+    "mile": 1609.344,
+}
+
 
 def configure(client):
     """Configure the module with the Garmin client instance"""
@@ -63,25 +73,49 @@ def _target_distance_meters(item: Dict[str, Any]) -> Optional[float]:
     if target.get("unitType") != "distance":
         return None
     value = target.get("value")
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+    scale = _DISTANCE_UNIT_TO_METERS.get(target.get("unit"))
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value < 0
+        or scale is None
+    ):
         return None
-    unit = str(target.get("unit") or "meter").lower()
-    multipliers = {
-        "meter": 1.0,
-        "meters": 1.0,
-        "metre": 1.0,
-        "metres": 1.0,
-        "kilometer": 1000.0,
-        "kilometers": 1000.0,
-        "kilometre": 1000.0,
-        "kilometres": 1000.0,
-        "km": 1000.0,
-        "mile": 1609.344,
-        "miles": 1609.344,
-        "mi": 1609.344,
-    }
-    multiplier = multipliers.get(unit)
-    return value * multiplier if multiplier is not None else None
+    return float(value) * scale
+
+
+def _fetch_event_detail(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Fetch the event detail payload, which contains the custom goal."""
+    event_id = item.get("id")
+    event_uuid = _clean_str(item.get("shareableEventUuid"))
+    if isinstance(event_id, (int, str)) and not isinstance(event_id, bool):
+        path = f"/calendar-service/event/{event_id}"
+    elif event_uuid:
+        path = f"/calendar-service/event/{event_uuid}/shareable"
+    else:
+        return {}
+
+    try:
+        return _as_dict(garmin_client.connectapi(path))
+    except Exception:
+        # Event-detail availability must not make the calendar list unusable.
+        return {}
+
+
+def _goal_time_seconds(detail: Dict[str, Any]) -> Optional[float]:
+    """Return the user's custom event goal when Garmin stores it as time."""
+    customization = _as_dict(detail.get("eventCustomization"))
+    goal = _as_dict(customization.get("customGoal"))
+    value = goal.get("value")
+    if (
+        goal.get("unitType") != "time"
+        or goal.get("unit") != "second"
+        or not isinstance(value, (int, float))
+        or isinstance(value, bool)
+    ):
+        return None
+    return float(value)
 
 
 def _clean_str(value: Any) -> Optional[str]:
@@ -92,7 +126,9 @@ def _clean_str(value: Any) -> Optional[str]:
     return trimmed or None
 
 
-def _curate_event(item: Dict[str, Any]) -> Dict[str, Any]:
+def _curate_event(
+    item: Dict[str, Any], detail: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Curate one raw calendar event into a compact shape."""
     event_time = _as_dict(item.get("eventTimeLocal"))
     return {
@@ -102,6 +138,7 @@ def _curate_event(item: Dict[str, Any]) -> Dict[str, Any]:
         "primary_event": bool(item.get("primaryEvent")),
         "subscribed": bool(item.get("subscribed")),
         "distance_meters": _target_distance_meters(item),
+        "goal_time_seconds": _goal_time_seconds(detail or {}),
         "start_time_local": event_time.get("startTimeHhMm"),
         "time_zone": event_time.get("timeZoneId"),
         "location": _clean_str(item.get("location")),
@@ -125,10 +162,12 @@ def register_tools(app):
         only workouts, nor by get_goals. This is the only tool that exposes
         them.
 
-        Each event reports its target distance in meters when Garmin stores one,
-        the local start time when the organiser published it, and two flags:
-        is_race marks the entry as a race rather than a general event, and
-        primary_event marks the goal race that an active training plan targets.
+        Each event reports its distance in meters when Garmin stores one,
+        the user's custom goal time in seconds when set, the local start
+        time when the organiser published it, and two flags: is_race marks
+        the entry as a race rather than a general event, and primary_event
+        marks the goal race that an active training plan targets. Goal time
+        comes from a per-event detail request.
 
         Args:
             start_date: Start date in YYYY-MM-DD format
@@ -157,7 +196,7 @@ def register_tools(app):
                     if key in seen:
                         continue
                     seen.add(key)
-                    events.append(_curate_event(item))
+                    events.append(_curate_event(item, _fetch_event_detail(item)))
 
             events.sort(key=lambda event: (event["date"], event["title"] or ""))
 

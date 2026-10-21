@@ -21,6 +21,8 @@ import json
 import math
 import os
 import pathlib
+import sys
+from decimal import Decimal
 from xml.etree import ElementTree as ET
 from typing import Any, Dict, Optional
 
@@ -156,6 +158,7 @@ def _normalise_course_points(course: Dict[str, Any]) -> tuple[list[Dict[str, Any
                     or point.get("coursePointType")
                     or point.get("type")
                     or point.get("typeKey")
+                    or "GENERIC"
                 ),
                 "lat": lat,
                 "lon": lon,
@@ -182,6 +185,47 @@ def _course_url(course_id: int) -> Optional[str]:
     return f"https://connect.{domain}/modern/course/{course_id}"
 
 
+def _course_preview(client: Any, course_id: int) -> Dict[str, Any]:
+    """Build a compact preview before a destructive course deletion."""
+    preview: Dict[str, Any] = {"course_id": course_id}
+    course = None
+    try:
+        course = client.client.connectapi(f"/course-service/course/{course_id}")
+    except Exception:
+        pass
+
+    if not isinstance(course, dict) or not course:
+        try:
+            items = client.client.connectapi("/course-service/course")
+        except Exception:
+            items = None
+        if not isinstance(items, list):
+            return preview
+        course = next(
+            (
+                item
+                for item in items
+                if isinstance(item, dict)
+                and str(item.get("courseId")) == str(course_id)
+            ),
+            None,
+        )
+        if course is None:
+            return preview
+
+    activity = course.get("activityType")
+    activity = activity if isinstance(activity, dict) else {}
+    preview.update(
+        {
+            "name": course.get("courseName"),
+            "activity": activity.get("typeKey"),
+            "distance_m": _first_present(course, "distanceInMeters", "distanceMeter"),
+            "created": course.get("createdDateFormatted"),
+        }
+    )
+    return {key: value for key, value in preview.items() if value is not None}
+
+
 def _resolve_gpx_output_path(course_id: int, output_path: Optional[str] = None) -> Optional[str]:
     """Resolve a GPX destination without silently writing to the app directory.
 
@@ -196,19 +240,29 @@ def _resolve_gpx_output_path(course_id: int, output_path: Optional[str] = None) 
             raise ValueError("output_path must be a non-empty file or directory path")
         expanded = os.path.abspath(os.path.expanduser(output_path.strip()))
         path = pathlib.Path(expanded)
+        if path.exists() and path.is_file():
+            if path.suffix.lower() != ".gpx":
+                raise ValueError("output_path must be a directory or a .gpx file")
+            return str(path)
+        if path.exists() and not path.is_dir():
+            raise ValueError("output_path must be a regular file or directory")
         # Existing directories, trailing separators, and extensionless paths
         # are treated as directories. This makes /data/routes convenient.
-        if (path.exists() and path.is_dir()) or output_path.endswith(("/", "\\")):
+        if path.is_dir() or output_path.endswith(("/", "\\")):
             return str(path / f"{course_id}.gpx")
-        if path.exists() and not path.is_file():
-            raise ValueError("output_path must be a regular file or directory")
         if path.suffix == "":
             return str(path / f"{course_id}.gpx")
         if path.suffix.lower() != ".gpx":
-            raise ValueError("output_path file must use the .gpx extension")
+            raise ValueError("output_path must be a directory or a .gpx file")
         return str(path)
 
-    configured_dir = os.getenv(_COURSE_DOWNLOAD_DIR_ENV) or os.getenv("GARMIN_FIT_DOWNLOAD_DIR")
+    configured_dir = os.getenv(_COURSE_DOWNLOAD_DIR_ENV)
+    if not configured_dir:
+        # Reuse the established FIT download-directory setting, including its
+        # persisted GARMIN_FIT_CONFIG fallback.
+        from garmin_mcp.activity_analysis import _resolve_download_dir
+
+        configured_dir = _resolve_download_dir(None)
     if not configured_dir:
         return None
     base = pathlib.Path(os.path.abspath(os.path.expanduser(configured_dir)))
@@ -221,6 +275,11 @@ def _xml_text(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _gpx_decimal(value: Any) -> str:
+    """Format numeric GPX values without exponent notation or rounding."""
+    return format(Decimal(str(value)), "f")
 
 
 def _append_text(parent: ET.Element, tag: str, value: Any) -> None:
@@ -248,7 +307,10 @@ def _build_course_gpx(course: Dict[str, Any]) -> tuple[bytes, Dict[str, int]]:
         wpt = ET.SubElement(
             root,
             _GPX_TAG + "wpt",
-            {"lat": str(waypoint["lat"]), "lon": str(waypoint["lon"])},
+            {
+                "lat": _gpx_decimal(waypoint["lat"]),
+                "lon": _gpx_decimal(waypoint["lon"]),
+            },
         )
         _append_text(wpt, "name", waypoint["name"])
         _append_text(wpt, "type", waypoint["type"])
@@ -260,9 +322,12 @@ def _build_course_gpx(course: Dict[str, Any]) -> tuple[bytes, Dict[str, int]]:
         track_point = ET.SubElement(
             segment,
             _GPX_TAG + "trkpt",
-            {"lat": str(point["latitude"]), "lon": str(point["longitude"])},
+            {
+                "lat": _gpx_decimal(point["latitude"]),
+                "lon": _gpx_decimal(point["longitude"]),
+            },
         )
-        _append_text(track_point, "ele", point.get("elevation"))
+        _append_text(track_point, "ele", _gpx_decimal(point["elevation"]))
         timestamp = point.get("timestamp") or point.get("time")
         if isinstance(timestamp, str) and timestamp.strip():
             _append_text(track_point, "time", timestamp)
@@ -327,7 +392,7 @@ _ACTIVITY_TYPE_IDS = {
     "trail_running": 6,
     "mountain_biking": 5,
     "road_biking": 10,
-    "gravel_cycling": 4,
+    "gravel_cycling": 143,
 }
 
 
@@ -571,12 +636,16 @@ def register_tools(app):
             if not isinstance(data, dict) or not data:
                 return f"Error: course {course_id} not found or returned no data."
 
-            payload, counts = _build_course_gpx(data)
+            export_course = dict(data)
+            export_course["courseName"] = (
+                _xml_text(data.get("courseName")) or f"Garmin Course {course_id}"
+            )
+            payload, counts = _build_course_gpx(export_course)
             _atomic_write(str(target), payload, overwrite=overwrite)
             result = {
                 "status": "success",
                 "course_id": course_id,
-                "name": _xml_text(data.get("courseName")) or f"Garmin Course {course_id}",
+                "name": export_course["courseName"],
                 "gpx_path": str(target),
                 **counts,
             }
@@ -675,20 +744,44 @@ def register_tools(app):
             return f"Error uploading course: {str(e)}"
 
     @app.tool()
-    async def delete_course(course_id: int) -> str:
+    async def delete_course(course_id: int, confirm: bool = False) -> str:
         """Delete a course from Garmin Connect.
+
+        This cannot be undone. Call once with ``confirm=false`` to preview the
+        route, then call again with ``confirm=true`` to delete it.
 
         Args:
             course_id: ID of the course to delete (get IDs from get_courses).
+            confirm: Must be true to actually delete; defaults to a preview.
         """
         try:
+            course_id = _validate_course_id(course_id)
+            preview = _course_preview(garmin_client, course_id)
+            if not confirm:
+                return _json_dumps(
+                    {
+                        "status": "needs_confirmation",
+                        "course": preview,
+                        "message": (
+                            "This permanently deletes the course from Garmin Connect "
+                            "and cannot be undone. Call again with confirm=true to proceed."
+                        ),
+                    }
+                )
+
             garmin_client.client.delete(
                 "connectapi", f"/course-service/course/{course_id}"
+            )
+            print(
+                "delete_course: deleted course "
+                f"{course_id} name={preview.get('name')!r}",
+                file=sys.stderr,
             )
             return _json_dumps(
                 {
                     "status": "success",
                     "course_id": course_id,
+                    "course": preview,
                     "message": f"Course {course_id} deleted",
                 },
             )
